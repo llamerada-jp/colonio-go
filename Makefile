@@ -1,6 +1,6 @@
 
 # commands
-export SUDO ?= sudo
+SUDO ?= sudo
 
 .PHONY: all
 all: test
@@ -19,6 +19,20 @@ setup:
 	fi
 
 .PHONY: test
-test:
+test: bridge.a
 	export COLONIO_SEED_BIN_PATH=$(PWD)/../colonio-seed/seed; \
 	go test test/*.go
+
+_obj/_cgo_export.h: colonio.go
+	go tool cgo colonio.go
+
+bridge.o: bridge.c _obj/_cgo_export.h
+	gcc -c $^ -I. -I_obj
+
+bridge.a: bridge.o
+	ar cr $@ $^
+
+.PHONY: clean
+clean:
+	$(RM) bridge.o bridge.a
+	$(RM) -r _obj
