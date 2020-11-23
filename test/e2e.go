@@ -1,8 +1,10 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	colonio "github.com/llamerada-jp/colonio-go"
 
@@ -25,20 +27,60 @@ func testE2E() {
 		}()
 
 		By("creating a new colonio instance")
-		c, err := colonio.NewColonio()
+		node1, err := colonio.NewColonio()
+		node2, err := colonio.NewColonio()
 		Expect(err).ShouldNot(HaveOccurred())
 
-		By("connecting to seed")
+		By("node1 connect to seed")
 		Eventually(func() error {
-			return c.Connect("ws://localhost:8080/test", "")
+			return node1.Connect("ws://localhost:8080/test", "")
+		}).ShouldNot(HaveOccurred())
+		By("node2 connect to seed")
+		Eventually(func() error {
+			return node2.Connect("ws://localhost:8080/test", "")
 		}).ShouldNot(HaveOccurred())
 
-		By("disconnecting from seed")
-		err = c.Disconnect()
+		By("node1 setup 2D info")
+		node1.SetPosition(1.0, 0.0)
+		ps1 := node1.AccessPubsub2D("ps")
+
+		By("node2 setup 2D info")
+		node2.SetPosition(2.0, 0.0)
+		ps2 := node2.AccessPubsub2D("ps")
+		recv := make(chan string)
+		ps2.On("hoge", func(v *colonio.Value) {
+			str, err := v.GetString()
+			Expect(err).ShouldNot(HaveOccurred())
+			recv <- str
+		})
+
+		By("sending message and waiting it")
+		Eventually(func() error {
+			select {
+			case v, ok := <-recv:
+				Expect(ok).Should(BeTrue())
+				Expect(v).Should(Equal("test"))
+				return nil
+
+			default:
+				err := ps1.Publish("hoge", 2.0, 0.0, 1.1, "test", 0)
+				Expect(err).ShouldNot(HaveOccurred())
+				return fmt.Errorf("the message was not received")
+			}
+		}, time.Second*60, time.Second*1).Should(Succeed())
+
+		By("node1 disconnect from seed")
+		err = node1.Disconnect()
+		Expect(err).ShouldNot(HaveOccurred())
+		By("node2 disconnect from seed")
+		err = node2.Disconnect()
 		Expect(err).ShouldNot(HaveOccurred())
 
-		By("quiting colonio instance")
-		err = c.Quit()
+		By("node1 quit colonio instance")
+		err = node1.Quit()
+		Expect(err).ShouldNot(HaveOccurred())
+		By("node2 quit colonio instance")
+		err = node2.Quit()
 		Expect(err).ShouldNot(HaveOccurred())
 	})
 }

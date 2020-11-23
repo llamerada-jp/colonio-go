@@ -1,4 +1,18 @@
-
+/*
+ * Copyright 2020 Yuji Ito <llamerada.jp@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "_cgo_export.h"
 
 // copy functions from _obj/colonio/cgo2.c
@@ -11,7 +25,8 @@ static const char *_GoStringPtr(_GoString_ s) {
 }
 
 // export constant value for golang
-const unsigned int cgo_colonio_nid_length = COLONIO_NID_LENGTH;
+const unsigned int cgo_colonio_nid_length                    = COLONIO_NID_LENGTH;
+const unsigned int cgo_colonio_colonio_explicit_event_thread = COLONIO_COLONIO_EXPLICIT_EVENT_THREAD;
 
 // colonio
 colonio_error_t *cgo_colonio_connect(colonio_t *colonio, _GoString_ url, _GoString_ token) {

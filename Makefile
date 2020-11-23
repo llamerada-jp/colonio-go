@@ -21,7 +21,7 @@ setup:
 .PHONY: test
 test: bridge.a
 	export COLONIO_SEED_BIN_PATH=$(PWD)/../colonio-seed/seed; \
-	go test test/*.go
+	go test -v test/*.go
 
 _obj/_cgo_export.h: colonio.go
 	go tool cgo colonio.go

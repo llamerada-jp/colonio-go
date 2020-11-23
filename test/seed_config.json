@@ -1,11 +1,8 @@
 {
   "node": {
     "coordSystem2D": {
-      "type": "plane",
-      "xMax": 1,
-      "xMin": -1,
-      "yMax": 1,
-      "yMin": -1
+      "type": "sphere",
+      "radius": 6378137
     },
     "iceServers": [
       {
@@ -15,7 +12,7 @@
       }
     ],
     "modules": {
-      "ps2": {
+      "ps": {
         "cacheTime": 100,
         "channel": 256,
         "type": "pubsub2D"
@@ -26,9 +23,9 @@
       "updatePeriod": 500
     }
   },
-  "path": "\/test",
+  "path": "/test",
   "pingInterval": 20000,
   "port": 8080,
-  "revision": 0.10000000000000001,
+  "revision": 20201121.1,
   "timeout": 30000
 }

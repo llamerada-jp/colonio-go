@@ -1,6 +1,22 @@
 package colonio
 
 /*
+ * Copyright 2020 Yuji Ito <llamerada.jp@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
 #cgo CFLAGS: -I${SRCDIR}/.
 #cgo LDFLAGS: -L${SRCDIR}/../colonio/output -L${SRCDIR}/../colonio/output/lib -lcolonio -lwebrtc -lm -lprotobuf -lstdc++ bridge.a
 #cgo pkg-config: openssl
@@ -8,6 +24,7 @@ package colonio
 #include "../colonio/src/colonio/colonio.h"
 
 extern const unsigned int cgo_colonio_nid_length;
+extern const unsigned int cgo_colonio_colonio_explicit_event_thread;
 
 // colonio
 colonio_error_t *cgo_colonio_connect(colonio_t *colonio, _GoString_ url, _GoString_ token);
@@ -74,11 +91,17 @@ func convertError(err *C.struct_colonio_error_s) error {
 
 // NewColonio creates a new initialized instance.
 func NewColonio() (*Colonio, error) {
-	instance := &Colonio{}
-	err := C.colonio_init(&instance.cInstance)
+	instance := &Colonio{
+		mapCache:      make(map[string]*Map),
+		pubsub2DCache: make(map[string]*Pubsub2D),
+	}
+	err := C.colonio_init(&instance.cInstance, C.cgo_colonio_colonio_explicit_event_thread)
 	if err != nil {
 		return nil, convertError(err)
 	}
+
+	go C.colonio_start_on_event_thread(&instance.cInstance)
+
 	return instance, nil
 }
 
@@ -120,6 +143,8 @@ func (c *Colonio) AccessPubsub2D(name string) *Pubsub2D {
 
 	instance := &Pubsub2D{
 		cInstance: C.cgo_colonio_access_pubsub_2d(&c.cInstance, name),
+		cbMutex:   sync.RWMutex{},
+		cbMap:     make(map[*string]func(*Value)),
 	}
 	pubsub2DMutex.Lock()
 	defer pubsub2DMutex.Unlock()
