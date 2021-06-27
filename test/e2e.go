@@ -16,7 +16,7 @@ func testE2E() {
 	It("does E2E test", func() {
 		By("starting seed for test")
 		cur, _ := os.Getwd()
-		cmd := exec.Command(os.Getenv("COLONIO_SEED_BIN_PATH"), "-config", cur+"/seed_config.json")
+		cmd := exec.Command(os.Getenv("COLONIO_SEED_BIN_PATH"), "--config", cur+"/seed_config.json")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		err := cmd.Start()
@@ -48,7 +48,7 @@ func testE2E() {
 		node2.SetPosition(2.0, 0.0)
 		ps2 := node2.AccessPubsub2D("ps")
 		recv := make(chan string)
-		ps2.On("hoge", func(v *colonio.Value) {
+		ps2.On("hoge", func(v colonio.Value) {
 			str, err := v.GetString()
 			Expect(err).ShouldNot(HaveOccurred())
 			recv <- str

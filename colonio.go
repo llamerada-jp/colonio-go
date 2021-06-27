@@ -51,15 +51,38 @@ import (
 	"unsafe"
 )
 
-// Colonio is an instance. It is equivalent to one node.
-type Colonio struct {
+// Colonio is an interface. It is equivalent to one node.
+type Colonio interface {
+	Connect(url, token string) error
+	Disconnect() error
+	AccessMap(name string) Map
+	AccessPubsub2D(name string) Pubsub2D
+	GetLocalNid() string
+	SetPosition(x, y float64) (float64, float64, error)
+	Quit() error
+}
+
+type colonioImpl struct {
 	cInstance     C.struct_colonio_s
-	mapCache      map[string]*Map
-	pubsub2DCache map[string]*Pubsub2D
+	mapCache      map[string]*mapImpl
+	pubsub2DCache map[string]*pubsub2dImpl
 }
 
 // Value is an instance, it is equivalent to one value.
-type Value struct {
+type Value interface {
+	IsNil() bool
+	IsBool() bool
+	IsInt() bool
+	IsDouble() bool
+	IsString() bool
+	Set(val interface{}) error
+	GetBool() (bool, error)
+	GetInt() (int64, error)
+	GetDouble() (float64, error)
+	GetString() (string, error)
+}
+
+type valueImpl struct {
 	valueType C.enum_COLONIO_VALUE_TYPE
 	vBool     bool
 	vInt      int64
@@ -67,22 +90,33 @@ type Value struct {
 	vString   string
 }
 
-type Map struct {
+type Map interface {
+	Get(key interface{}) (Value, error)
+	Set(key, val interface{}, opt uint32) error
+}
+
+type mapImpl struct {
 	cInstance C.struct_colonio_map_s
 }
 
-type Pubsub2D struct {
+type Pubsub2D interface {
+	Publish(name string, x, y, r float64, val interface{}, opt uint32) error
+	On(name string, cb func(Value))
+	Off(name string)
+}
+
+type pubsub2dImpl struct {
 	cInstance C.struct_colonio_pubsub_2d_s
 	cbMutex   sync.RWMutex
-	cbMap     map[*string]func(*Value)
+	cbMap     map[*string]func(Value)
 }
 
 var pubsub2DMutex sync.RWMutex
-var pubsub2DMap map[*C.struct_colonio_pubsub_2d_s]*Pubsub2D
+var pubsub2DMap map[*C.struct_colonio_pubsub_2d_s]*pubsub2dImpl
 
 func init() {
 	pubsub2DMutex = sync.RWMutex{}
-	pubsub2DMap = make(map[*C.struct_colonio_pubsub_2d_s]*Pubsub2D)
+	pubsub2DMap = make(map[*C.struct_colonio_pubsub_2d_s]*pubsub2dImpl)
 }
 
 func convertError(err *C.struct_colonio_error_s) error {
@@ -90,10 +124,10 @@ func convertError(err *C.struct_colonio_error_s) error {
 }
 
 // NewColonio creates a new initialized instance.
-func NewColonio() (*Colonio, error) {
-	instance := &Colonio{
-		mapCache:      make(map[string]*Map),
-		pubsub2DCache: make(map[string]*Pubsub2D),
+func NewColonio() (Colonio, error) {
+	instance := &colonioImpl{
+		mapCache:      make(map[string]*mapImpl),
+		pubsub2DCache: make(map[string]*pubsub2dImpl),
 	}
 	err := C.colonio_init(&instance.cInstance, C.cgo_colonio_colonio_explicit_event_thread)
 	if err != nil {
@@ -106,7 +140,7 @@ func NewColonio() (*Colonio, error) {
 }
 
 // Connect to seed and join the cluster.
-func (c *Colonio) Connect(url, token string) error {
+func (c *colonioImpl) Connect(url, token string) error {
 	err := C.cgo_colonio_connect(&c.cInstance, url, token)
 	if err != nil {
 		return convertError(err)
@@ -115,7 +149,7 @@ func (c *Colonio) Connect(url, token string) error {
 }
 
 // Disconnect from the cluster and the seed.
-func (c *Colonio) Disconnect() error {
+func (c *colonioImpl) Disconnect() error {
 	err := C.colonio_disconnect(&c.cInstance)
 	if err != nil {
 		return convertError(err)
@@ -123,12 +157,12 @@ func (c *Colonio) Disconnect() error {
 	return nil
 }
 
-func (c *Colonio) AccessMap(name string) *Map {
+func (c *colonioImpl) AccessMap(name string) Map {
 	if ret, ok := c.mapCache[name]; ok {
 		return ret
 	}
 
-	instance := &Map{
+	instance := &mapImpl{
 		cInstance: C.cgo_colonio_access_map(&c.cInstance, name),
 	}
 
@@ -136,15 +170,15 @@ func (c *Colonio) AccessMap(name string) *Map {
 	return instance
 }
 
-func (c *Colonio) AccessPubsub2D(name string) *Pubsub2D {
+func (c *colonioImpl) AccessPubsub2D(name string) Pubsub2D {
 	if ret, ok := c.pubsub2DCache[name]; ok {
 		return ret
 	}
 
-	instance := &Pubsub2D{
+	instance := &pubsub2dImpl{
 		cInstance: C.cgo_colonio_access_pubsub_2d(&c.cInstance, name),
 		cbMutex:   sync.RWMutex{},
-		cbMap:     make(map[*string]func(*Value)),
+		cbMap:     make(map[*string]func(Value)),
 	}
 	pubsub2DMutex.Lock()
 	defer pubsub2DMutex.Unlock()
@@ -158,14 +192,14 @@ func (c *Colonio) AccessPubsub2D(name string) *Pubsub2D {
 	return instance
 }
 
-func (c *Colonio) GetLocalNid() string {
+func (c *colonioImpl) GetLocalNid() string {
 	buf := make([]byte, C.cgo_colonio_nid_length+1)
 	data := (*reflect.SliceHeader)(unsafe.Pointer(&buf)).Data
 	C.colonio_get_local_nid(&c.cInstance, (*C.char)(unsafe.Pointer(data)), nil)
 	return string(buf)
 }
 
-func (c *Colonio) SetPosition(x, y float64) (float64, float64, error) {
+func (c *colonioImpl) SetPosition(x, y float64) (float64, float64, error) {
 	cX := C.double(x)
 	cY := C.double(y)
 	err := C.colonio_set_position(&c.cInstance, &cX, &cY)
@@ -176,7 +210,7 @@ func (c *Colonio) SetPosition(x, y float64) (float64, float64, error) {
 }
 
 // Quit is the finalizer of the instance.
-func (c *Colonio) Quit() error {
+func (c *colonioImpl) Quit() error {
 	err := C.colonio_quit(&c.cInstance)
 	if err != nil {
 		return convertError(err)
@@ -184,23 +218,23 @@ func (c *Colonio) Quit() error {
 	return nil
 }
 
-func newValue(cValue *C.struct_colonio_value_s) *Value {
+func newValue(cValue *C.struct_colonio_value_s) Value {
 	valueType := C.enum_COLONIO_VALUE_TYPE(C.colonio_value_get_type(cValue))
 	switch valueType {
 	case C.COLONIO_VALUE_TYPE_BOOL:
-		return &Value{
+		return &valueImpl{
 			valueType: valueType,
 			vBool:     bool(C.colonio_value_get_bool(cValue)),
 		}
 
 	case C.COLONIO_VALUE_TYPE_INT:
-		return &Value{
+		return &valueImpl{
 			valueType: valueType,
 			vInt:      int64(C.colonio_value_get_int(cValue)),
 		}
 
 	case C.COLONIO_VALUE_TYPE_DOUBLE:
-		return &Value{
+		return &valueImpl{
 			valueType: valueType,
 			vDouble:   float64(C.colonio_value_get_double(cValue)),
 		}
@@ -209,20 +243,20 @@ func newValue(cValue *C.struct_colonio_value_s) *Value {
 		buf := make([]byte, uint(C.colonio_value_get_string_siz(cValue)))
 		data := (*reflect.SliceHeader)(unsafe.Pointer(&buf)).Data
 		C.colonio_value_get_string(cValue, (*C.char)(unsafe.Pointer(data)))
-		return &Value{
+		return &valueImpl{
 			valueType: valueType,
 			vString:   string(buf),
 		}
 
 	default:
-		return &Value{
+		return &valueImpl{
 			valueType: valueType,
 		}
 	}
 }
 
-func NewValue(v interface{}) (*Value, error) {
-	val := &Value{}
+func NewValue(v interface{}) (Value, error) {
+	val := &valueImpl{}
 	err := val.Set(v)
 	if err != nil {
 		return nil, err
@@ -230,27 +264,27 @@ func NewValue(v interface{}) (*Value, error) {
 	return val, nil
 }
 
-func (v *Value) IsNil() bool {
+func (v *valueImpl) IsNil() bool {
 	return v.valueType == C.COLONIO_VALUE_TYPE_NULL
 }
 
-func (v *Value) IsBool() bool {
+func (v *valueImpl) IsBool() bool {
 	return v.valueType == C.COLONIO_VALUE_TYPE_BOOL
 }
 
-func (v *Value) IsInt() bool {
+func (v *valueImpl) IsInt() bool {
 	return v.valueType == C.COLONIO_VALUE_TYPE_INT
 }
 
-func (v *Value) IsDouble() bool {
+func (v *valueImpl) IsDouble() bool {
 	return v.valueType == C.COLONIO_VALUE_TYPE_DOUBLE
 }
 
-func (v *Value) IsString() bool {
+func (v *valueImpl) IsString() bool {
 	return v.valueType == C.COLONIO_VALUE_TYPE_STRING
 }
 
-func (v *Value) Set(val interface{}) error {
+func (v *valueImpl) Set(val interface{}) error {
 	v.vString = ""
 
 	if reflect.ValueOf(v).IsNil() {
@@ -258,10 +292,10 @@ func (v *Value) Set(val interface{}) error {
 		return nil
 	}
 
-	switch val.(type) {
+	switch val := val.(type) {
 	case bool:
 		v.valueType = C.COLONIO_VALUE_TYPE_BOOL
-		v.vBool = val.(bool)
+		v.vBool = val
 		return nil
 
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
@@ -276,57 +310,70 @@ func (v *Value) Set(val interface{}) error {
 
 	case string:
 		v.valueType = C.COLONIO_VALUE_TYPE_STRING
-		v.vString = val.(string)
+		v.vString = val
 		return nil
 	}
 
 	return fmt.Errorf("unsupported value type")
 }
 
-func (v *Value) GetBool() (bool, error) {
+func (v *valueImpl) GetBool() (bool, error) {
 	if v.valueType != C.COLONIO_VALUE_TYPE_BOOL {
 		return false, fmt.Errorf("the type of value is wrong")
 	}
 	return v.vBool, nil
 }
 
-func (v *Value) GetInt() (int64, error) {
+func (v *valueImpl) GetInt() (int64, error) {
 	if v.valueType != C.COLONIO_VALUE_TYPE_INT {
 		return 0, fmt.Errorf("the type of value is wrong")
 	}
 	return v.vInt, nil
 }
 
-func (v *Value) GetDouble() (float64, error) {
+func (v *valueImpl) GetDouble() (float64, error) {
 	if v.valueType != C.COLONIO_VALUE_TYPE_DOUBLE {
 		return 0, fmt.Errorf("the type of value is wrong")
 	}
 	return v.vDouble, nil
 }
 
-func (v *Value) GetString() (string, error) {
+func (v *valueImpl) GetString() (string, error) {
 	if v.valueType != C.COLONIO_VALUE_TYPE_STRING {
 		return "", fmt.Errorf("the type of value is wrong")
 	}
 	return v.vString, nil
 }
 
-func (v *Value) writeOut(cValue *C.struct_colonio_value_s) {
-	switch v.valueType {
-	case C.COLONIO_VALUE_TYPE_BOOL:
-		C.colonio_value_set_bool(cValue, C.bool(v.vBool))
-	case C.COLONIO_VALUE_TYPE_INT:
-		C.colonio_value_set_int(cValue, C.int64_t(v.vInt))
-	case C.COLONIO_VALUE_TYPE_DOUBLE:
-		C.colonio_value_set_double(cValue, C.double(v.vDouble))
-	case C.COLONIO_VALUE_TYPE_STRING:
-		C.cgo_colonio_value_set_string(cValue, v.vString)
-	default:
-		C.colonio_value_free(cValue)
+func writeOut(cValue *C.struct_colonio_value_s, value Value) {
+	if value.IsBool() {
+		v, _ := value.GetBool()
+		C.colonio_value_set_bool(cValue, C.bool(v))
+		return
 	}
+
+	if value.IsInt() {
+		v, _ := value.GetInt()
+		C.colonio_value_set_int(cValue, C.int64_t(v))
+		return
+	}
+
+	if value.IsDouble() {
+		v, _ := value.GetDouble()
+		C.colonio_value_set_double(cValue, C.double(v))
+		return
+	}
+
+	if value.IsString() {
+		v, _ := value.GetString()
+		C.cgo_colonio_value_set_string(cValue, v)
+		return
+	}
+
+	C.colonio_value_free(cValue)
 }
 
-func (m *Map) Get(key interface{}) (*Value, error) {
+func (m *mapImpl) Get(key interface{}) (Value, error) {
 	// key
 	vKey, err := NewValue(key)
 	if err != nil {
@@ -335,7 +382,7 @@ func (m *Map) Get(key interface{}) (*Value, error) {
 	cKey := C.struct_colonio_value_s{}
 	C.colonio_value_init(&cKey)
 	defer C.colonio_value_free(&cKey)
-	vKey.writeOut(&cKey)
+	writeOut(&cKey, vKey)
 
 	// value
 	cVal := C.struct_colonio_value_s{}
@@ -351,7 +398,7 @@ func (m *Map) Get(key interface{}) (*Value, error) {
 	return newValue(&cVal), nil
 }
 
-func (m *Map) Set(key, val interface{}, opt uint32) error {
+func (m *mapImpl) Set(key, val interface{}, opt uint32) error {
 	// key
 	vKey, err := NewValue(key)
 	if err != nil {
@@ -360,7 +407,7 @@ func (m *Map) Set(key, val interface{}, opt uint32) error {
 	cKey := C.struct_colonio_value_s{}
 	C.colonio_value_init(&cKey)
 	defer C.colonio_value_free(&cKey)
-	vKey.writeOut(&cKey)
+	writeOut(&cKey, vKey)
 
 	// value
 	vValue, err := NewValue(val)
@@ -370,7 +417,7 @@ func (m *Map) Set(key, val interface{}, opt uint32) error {
 	cVal := C.struct_colonio_value_s{}
 	C.colonio_value_init(&cVal)
 	defer C.colonio_value_free(&cVal)
-	vValue.writeOut(&cVal)
+	writeOut(&cVal, vValue)
 
 	// set
 	cErr := C.colonio_map_set(&m.cInstance, &cKey, &cVal, C.uint32_t(opt))
@@ -380,7 +427,7 @@ func (m *Map) Set(key, val interface{}, opt uint32) error {
 	return nil
 }
 
-func (p *Pubsub2D) Publish(name string, x, y, r float64, val interface{}, opt uint32) error {
+func (p *pubsub2dImpl) Publish(name string, x, y, r float64, val interface{}, opt uint32) error {
 	// value
 	vValue, err := NewValue(val)
 	if err != nil {
@@ -389,7 +436,7 @@ func (p *Pubsub2D) Publish(name string, x, y, r float64, val interface{}, opt ui
 	cVal := C.struct_colonio_value_s{}
 	C.colonio_value_init(&cVal)
 	defer C.colonio_value_free(&cVal)
-	vValue.writeOut(&cVal)
+	writeOut(&cVal, vValue)
 
 	// publish
 	cErr := C.cgo_colonio_pubsub_2d_publish(&p.cInstance, name, C.double(x), C.double(y), C.double(r), &cVal, C.uint32_t(opt))
@@ -401,7 +448,7 @@ func (p *Pubsub2D) Publish(name string, x, y, r float64, val interface{}, opt ui
 
 //export cgoCbPubsub2DOn
 func cgoCbPubsub2DOn(cInstancePtr *C.struct_colonio_pubsub_2d_s, ptr unsafe.Pointer, cVal *C.struct_colonio_value_s) {
-	var ps2 *Pubsub2D
+	var ps2 *pubsub2dImpl
 	{
 		pubsub2DMutex.RLock()
 		defer pubsub2DMutex.RUnlock()
@@ -412,7 +459,7 @@ func cgoCbPubsub2DOn(cInstancePtr *C.struct_colonio_pubsub_2d_s, ptr unsafe.Poin
 		}
 	}
 
-	var cb func(*Value)
+	var cb func(Value)
 	{
 		ps2.cbMutex.RLock()
 		defer ps2.cbMutex.RUnlock()
@@ -426,20 +473,20 @@ func cgoCbPubsub2DOn(cInstancePtr *C.struct_colonio_pubsub_2d_s, ptr unsafe.Poin
 	cb(value)
 }
 
-func (p *Pubsub2D) On(name string, cb func(*Value)) {
+func (p *pubsub2dImpl) On(name string, cb func(Value)) {
 	p.cbMutex.Lock()
 	defer p.cbMutex.Unlock()
 	p.cbMap[&name] = cb
 	C.cgo_colonio_pubsub_2d_on(&p.cInstance, name, unsafe.Pointer(&name))
 }
 
-func (p *Pubsub2D) Off(name string) {
+func (p *pubsub2dImpl) Off(name string) {
 	C.cgo_colonio_pubsub_2d_off(&p.cInstance, name)
 
 	p.cbMutex.Lock()
 	defer p.cbMutex.Unlock()
 
-	for s, _ := range p.cbMap {
+	for s := range p.cbMap {
 		if *s == name {
 			delete(p.cbMap, s)
 			return
