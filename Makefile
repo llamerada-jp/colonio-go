@@ -19,20 +19,10 @@ setup:
 	fi
 
 .PHONY: test
-test: bridge.a
+test:
 	export COLONIO_SEED_BIN_PATH=$(PWD)/../colonio-seed/seed; \
 	go test -v test/*.go
 
-_obj/_cgo_export.h: colonio.go
-	go tool cgo colonio.go
-
-bridge.o: bridge.c _obj/_cgo_export.h
-	gcc -c $^ -I. -I_obj
-
-bridge.a: bridge.o
-	ar cr $@ $^
-
 .PHONY: clean
 clean:
-	$(RM) bridge.o bridge.a
 	$(RM) -r _obj
