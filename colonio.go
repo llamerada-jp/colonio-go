@@ -17,11 +17,10 @@ package colonio
  */
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/.
-#cgo LDFLAGS: -L${SRCDIR}/../colonio/output -L${SRCDIR}/../colonio/output/lib -lcolonio -lwebrtc -lm -lprotobuf -lstdc++ bridge.a
+#cgo LDFLAGS: -lcolonio -lwebrtc -lm -lprotobuf -lstdc++
 #cgo pkg-config: openssl
 
-#include "../colonio/src/colonio/colonio.h"
+#include <colonio/colonio.h>
 
 extern const unsigned int cgo_colonio_nid_length;
 extern const unsigned int cgo_colonio_colonio_explicit_event_thread;
